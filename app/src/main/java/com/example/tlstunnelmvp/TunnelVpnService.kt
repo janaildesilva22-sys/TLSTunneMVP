@@ -1,248 +1,252 @@
 package com.example.tlstunnelmvp
 
-import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.net.VpnService
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import android.os.Build
+import android.os.IBinder
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 
-class MainActivity : ComponentActivity() {
+class TunnelVpnService : VpnService() {
 
-    private var pendingHost = "127.0.0.1"
-    private var pendingPort = 4433
+    companion object {
+        private const val CHANNEL_ID = "tls_tunnel_channel"
+        private const val NOTIFICATION_ID = 1001
 
-    private val vpnPermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
+        const val EXTRA_HOST = "server_host"
+        const val EXTRA_PORT = "server_port"
 
-            if (result.resultCode == Activity.RESULT_OK) {
+        private const val DEFAULT_HOST = "127.0.0.1"
+        private const val DEFAULT_PORT = 4433
+    }
 
-                val intent = Intent(
-                    this,
-                    TunnelVpnService::class.java
-                )
+    private var vpnInterface: android.os.ParcelFileDescriptor? = null
+    private var tlsSocket: SSLSocket? = null
 
-                intent.putExtra(
-                    TunnelVpnService.EXTRA_HOST,
-                    pendingHost
-                )
+    @Volatile
+    private var running = false
 
-                intent.putExtra(
-                    TunnelVpnService.EXTRA_PORT,
-                    pendingPort
-                )
+    override fun onCreate() {
+        super.onCreate()
 
-                ContextCompat.startForegroundService(
-                    this,
-                    intent
-                )
-            }
+        createNotificationChannel()
+
+        startForeground(
+            NOTIFICATION_ID,
+            createNotification()
+        )
+    }
+
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
+
+        if (!running) {
+
+            running = true
+
+            val host =
+                intent?.getStringExtra(EXTRA_HOST)
+                    ?: DEFAULT_HOST
+
+            val port =
+                intent?.getIntExtra(
+                    EXTRA_PORT,
+                    DEFAULT_PORT
+                ) ?: DEFAULT_PORT
+
+            Thread {
+                runTunnel(host, port)
+            }.start()
         }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        return START_STICKY
+    }
 
-        setContent {
-            TLSTunnelApp(
-                onConnect = { host, port ->
+    private fun runTunnel(
+        host: String,
+        port: Int
+    ) {
 
-                    pendingHost = host
-                    pendingPort = port
+        try {
 
-                    val prepareIntent =
-                        VpnService.prepare(this)
+            vpnInterface = Builder()
+                .setSession("TLS Tunnel MVP")
+                .addAddress("10.8.0.2", 32)
+                .establish()
 
-                    if (prepareIntent != null) {
-                        vpnPermissionLauncher.launch(
-                            prepareIntent
-                        )
-                    } else {
+            if (vpnInterface == null) {
+                stopSelf()
+                return
+            }
 
-                        val intent = Intent(
-                            this,
-                            TunnelVpnService::class.java
-                        )
+            val socketFactory =
+                SSLSocketFactory.getDefault()
+                    as SSLSocketFactory
 
-                        intent.putExtra(
-                            TunnelVpnService.EXTRA_HOST,
-                            host
-                        )
+            val socket =
+                socketFactory.createSocket(
+                    host,
+                    port
+                ) as SSLSocket
 
-                        intent.putExtra(
-                            TunnelVpnService.EXTRA_PORT,
-                            port
-                        )
+            tlsSocket = socket
 
-                        ContextCompat.startForegroundService(
-                            this,
-                            intent
-                        )
-                    }
-                },
+            if (!protect(socket)) {
+                socket.close()
+                stopSelf()
+                return
+            }
 
-                onDisconnect = {
-                    stopService(
-                        Intent(
-                            this,
-                            TunnelVpnService::class.java
-                        )
-                    )
+            socket.startHandshake()
+
+            val output =
+                BufferedOutputStream(
+                    socket.outputStream
+                )
+
+            val input =
+                BufferedInputStream(
+                    socket.inputStream
+                )
+
+            output.write(
+                "TLSTUNNEL-MVP/2".toByteArray()
+            )
+
+            output.flush()
+
+            val buffer = ByteArray(1024)
+
+            while (
+                running &&
+                !socket.isClosed
+            ) {
+
+                val count =
+                    input.read(buffer)
+
+                if (count < 0) {
+                    break
                 }
+            }
+
+        } catch (e: Exception) {
+
+            e.printStackTrace()
+
+        } finally {
+
+            try {
+                tlsSocket?.close()
+            } catch (_: Exception) {
+            }
+
+            tlsSocket = null
+
+            try {
+                vpnInterface?.close()
+            } catch (_: Exception) {
+            }
+
+            vpnInterface = null
+            running = false
+        }
+    }
+
+    private fun createNotificationChannel() {
+
+        if (
+            Build.VERSION.SDK_INT >=
+            Build.VERSION_CODES.O
+        ) {
+
+            val channel =
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "TLS Tunnel",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+
+            val manager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+            manager.createNotificationChannel(
+                channel
             )
         }
     }
-}
 
-@Composable
-fun TLSTunnelApp(
-    onConnect: (String, Int) -> Unit,
-    onDisconnect: () -> Unit
-) {
+    private fun createNotification(): Notification {
 
-    var connected by remember {
-        mutableStateOf(false)
+        return Notification.Builder(
+            this,
+            CHANNEL_ID
+        )
+            .setContentTitle(
+                "TLS Tunnel MVP"
+            )
+            .setContentText(
+                "Túnel TLS em execução"
+            )
+            .setSmallIcon(
+                android.R.drawable.stat_sys_warning
+            )
+            .setOngoing(true)
+            .build()
     }
 
-    var host by remember {
-        mutableStateOf("127.0.0.1")
-    }
+    override fun onDestroy() {
 
-    var port by remember {
-        mutableStateOf("4433")
-    }
+        running = false
 
-    MaterialTheme {
-
-        Surface(
-            modifier = Modifier.fillMaxSize()
-        ) {
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-
-                horizontalAlignment =
-                    Alignment.CenterHorizontally,
-
-                verticalArrangement =
-                    Arrangement.Center
-            ) {
-
-                Text(
-                    text = "TLS Tunnel MVP",
-                    style =
-                        MaterialTheme.typography.headlineMedium
-                )
-
-                Spacer(
-                    modifier = Modifier.height(16.dp)
-                )
-
-                Text(
-                    text =
-                        if (connected)
-                            "Status: CONECTADO"
-                        else
-                            "Status: DESCONECTADO"
-                )
-
-                Spacer(
-                    modifier = Modifier.height(24.dp)
-                )
-
-                OutlinedTextField(
-                    value = host,
-                    onValueChange = {
-                        host = it
-                    },
-                    label = {
-                        Text("Servidor")
-                    },
-                    singleLine = true,
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier = Modifier.height(12.dp)
-                )
-
-                OutlinedTextField(
-                    value = port,
-                    onValueChange = {
-                        port = it
-                    },
-                    label = {
-                        Text("Porta")
-                    },
-                    singleLine = true,
-                    modifier =
-                        Modifier.fillMaxWidth()
-                )
-
-                Spacer(
-                    modifier = Modifier.height(24.dp)
-                )
-
-                Button(
-                    onClick = {
-
-                        if (connected) {
-
-                            onDisconnect()
-                            connected = false
-
-                        } else {
-
-                            val portNumber =
-                                port.toIntOrNull()
-
-                            if (portNumber != null) {
-
-                                onConnect(
-                                    host,
-                                    portNumber
-                                )
-
-                                connected = true
-                            }
-                        }
-
-                    },
-                    modifier =
-                        Modifier.fillMaxWidth()
-                ) {
-
-                    Text(
-                        text =
-                            if (connected)
-                                "DESCONECTAR"
-                            else
-                                "CONECTAR"
-                    )
-                }
-            }
+        try {
+            tlsSocket?.close()
+        } catch (_: Exception) {
         }
+
+        try {
+            vpnInterface?.close()
+        } catch (_: Exception) {
+        }
+
+        tlsSocket = null
+        vpnInterface = null
+
+        super.onDestroy()
+    }
+
+    override fun onRevoke() {
+
+        running = false
+
+        try {
+            tlsSocket?.close()
+        } catch (_: Exception) {
+        }
+
+        try {
+            vpnInterface?.close()
+        } catch (_: Exception) {
+        }
+
+        stopSelf()
+
+        super.onRevoke()
+    }
+
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? {
+        return super.onBind(intent)
     }
 }
