@@ -27,8 +27,8 @@ import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
 
-    mutableStateOf("tlstunnemvp.fly.dev")
-    private var pendingPort = 4433
+    private var pendingHost = "tlstunnemvp.fly.dev"
+private var pendingPort = 443
 
     private val vpnPermissionLauncher =
         registerForActivityResult(
