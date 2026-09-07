@@ -7,9 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,11 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -30,16 +25,17 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import java.net.InetSocketAddress
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
 
 class MainActivity : ComponentActivity() {
 
@@ -50,6 +46,7 @@ class MainActivity : ComponentActivity() {
         registerForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
+
             if (result.resultCode == Activity.RESULT_OK) {
                 startTunnelService(
                     pendingHost,
@@ -62,8 +59,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
+
             TLSTunnelApp(
                 onConnect = { host, port ->
+
                     pendingHost = host
                     pendingPort = port
 
@@ -71,12 +70,22 @@ class MainActivity : ComponentActivity() {
                         VpnService.prepare(this)
 
                     if (prepareIntent != null) {
-                        vpnPermissionLauncher.launch(prepareIntent)
+
+                        vpnPermissionLauncher.launch(
+                            prepareIntent
+                        )
+
                     } else {
-                        startTunnelService(host, port)
+
+                        startTunnelService(
+                            host,
+                            port
+                        )
                     }
                 },
+
                 onDisconnect = {
+
                     stopService(
                         Intent(
                             this,
@@ -92,6 +101,7 @@ class MainActivity : ComponentActivity() {
         host: String,
         port: Int
     ) {
+
         val intent =
             Intent(
                 this,
@@ -133,16 +143,6 @@ fun TLSTunnelApp(
         mutableStateOf("443")
     }
 
-    var status by remember {
-        mutableStateOf("Pronto para conectar")
-    }
-
-    var testing by remember {
-        mutableStateOf(false)
-    }
-
-    val context = androidx.compose.ui.platform.LocalContext.current
-
     MaterialTheme {
 
         Surface(
@@ -152,54 +152,55 @@ fun TLSTunnelApp(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(
-                        rememberScrollState()
-                    )
-                    .padding(20.dp),
-                horizontalAlignment =
-                    Alignment.CenterHorizontally
-            ) {
+                    .padding(24.dp),
 
-                Spacer(
-                    modifier =
-                        Modifier.height(25.dp)
-                )
+                horizontalAlignment =
+                    Alignment.CenterHorizontally,
+
+                verticalArrangement =
+                    Arrangement.Center
+            ) {
 
                 Text(
                     text = "TLS Tunnel",
                     style =
                         MaterialTheme.typography.headlineLarge,
-                    fontWeight =
-                        FontWeight.Bold
+                    fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "MVP",
+                    text = "Secure connection",
                     style =
-                        MaterialTheme.typography.titleMedium
+                        MaterialTheme.typography.bodyMedium
                 )
 
                 Spacer(
                     modifier =
-                        Modifier.height(20.dp)
+                        Modifier.height(24.dp)
                 )
 
                 Card(
                     modifier =
                         Modifier.fillMaxWidth(),
+
                     shape =
                         RoundedCornerShape(20.dp),
-                    colors =
-                        CardDefaults.cardColors()
+
+                    elevation =
+                        CardDefaults.cardElevation(
+                            defaultElevation = 6.dp
+                        )
                 ) {
 
                     Column(
                         modifier =
-                            Modifier.padding(18.dp)
+                            Modifier.padding(20.dp)
                     ) {
 
                         Text(
                             text = "STATUS",
+                            style =
+                                MaterialTheme.typography.labelMedium,
                             fontWeight =
                                 FontWeight.Bold
                         )
@@ -212,22 +213,28 @@ fun TLSTunnelApp(
                         Text(
                             text =
                                 if (connected)
-                                    "🟢 CONECTADO"
+                                    "● CONECTADO"
                                 else
-                                    "⚪ DESCONECTADO",
+                                    "● DESCONECTADO",
+
                             style =
                                 MaterialTheme.typography.titleLarge,
+
                             fontWeight =
                                 FontWeight.Bold
                         )
 
                         Spacer(
                             modifier =
-                                Modifier.height(5.dp)
+                                Modifier.height(6.dp)
                         )
 
                         Text(
-                            text = status
+                            text =
+                                if (connected)
+                                    "Túnel em execução"
+                                else
+                                    "Pronto para conectar"
                         )
                     }
                 }
@@ -239,15 +246,20 @@ fun TLSTunnelApp(
 
                 OutlinedTextField(
                     value = host,
+
                     onValueChange = {
                         host = it
                     },
+
                     label = {
                         Text("Servidor")
                     },
+
                     singleLine = true,
+
                     modifier =
                         Modifier.fillMaxWidth(),
+
                     enabled = !connected
                 )
 
@@ -258,28 +270,26 @@ fun TLSTunnelApp(
 
                 OutlinedTextField(
                     value = port,
+
                     onValueChange = {
-                        if (
-                            it.length <= 5 &&
-                            it.all { char ->
-                                char.isDigit()
-                            }
-                        ) {
-                            port = it
-                        }
+                        port = it
                     },
+
                     label = {
                         Text("Porta")
                     },
+
                     singleLine = true,
+
                     modifier =
                         Modifier.fillMaxWidth(),
+
                     enabled = !connected
                 )
 
                 Spacer(
                     modifier =
-                        Modifier.height(18.dp)
+                        Modifier.height(20.dp)
                 )
 
                 Button(
@@ -291,33 +301,16 @@ fun TLSTunnelApp(
 
                             connected = false
 
-                            status =
-                                "Túnel desconectado"
-
                         } else {
 
                             val portNumber =
                                 port.toIntOrNull()
 
                             if (
-                                host.isBlank()
+                                host.isNotBlank() &&
+                                portNumber != null &&
+                                portNumber in 1..65535
                             ) {
-
-                                status =
-                                    "Digite o servidor"
-
-                            } else if (
-                                portNumber == null ||
-                                portNumber !in 1..65535
-                            ) {
-
-                                status =
-                                    "Porta inválida"
-
-                            } else {
-
-                                status =
-                                    "Iniciando conexão..."
 
                                 onConnect(
                                     host,
@@ -328,12 +321,14 @@ fun TLSTunnelApp(
                             }
                         }
                     },
+
                     modifier =
-                        Modifier.fillMaxWidth(),
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+
                     shape =
-                        RoundedCornerShape(14.dp),
-                    colors =
-                        ButtonDefaults.buttonColors()
+                        RoundedCornerShape(16.dp)
                 ) {
 
                     Text(
@@ -342,6 +337,7 @@ fun TLSTunnelApp(
                                 "DESCONECTAR"
                             else
                                 "CONECTAR",
+
                         fontWeight =
                             FontWeight.Bold
                     )
@@ -349,155 +345,25 @@ fun TLSTunnelApp(
 
                 Spacer(
                     modifier =
-                        Modifier.height(10.dp)
-                )
-
-                Button(
-                    onClick = {
-
-                        if (testing) {
-                            return@Button
-                        }
-
-                        val portNumber =
-                            port.toIntOrNull()
-
-                        if (
-                            host.isBlank() ||
-                            portNumber == null ||
-                            portNumber !in 1..65535
-                        ) {
-
-                            status =
-                                "Servidor ou porta inválidos"
-
-                            return@Button
-                        }
-
-                        testing = true
-
-                        status =
-                            "Testando servidor..."
-
-                        Thread {
-
-                            var socket:
-                                    SSLSocket? = null
-
-                            try {
-
-                                val factory =
-                                    SSLSocketFactory.getDefault()
-                                        as SSLSocketFactory
-
-                                socket =
-                                    factory.createSocket()
-                                        as SSLSocket
-
-                                socket.soTimeout =
-                                    8000
-
-                                socket.connect(
-                                    InetSocketAddress(
-                                        host,
-                                        portNumber
-                                    ),
-                                    8000
-                                )
-
-                                socket.startHandshake()
-
-                                runOnUiThread {
-
-                                    status =
-                                        "Servidor TLS ONLINE ✓"
-
-                                    testing = false
-                                }
-
-                            } catch (
-                                error: Exception
-                            ) {
-
-                                runOnUiThread {
-
-                                    status =
-                                        "Falha: servidor não respondeu"
-
-                                    testing = false
-                                }
-
-                            } finally {
-
-                                try {
-                                    socket?.close()
-                                } catch (
-                                    _: Exception
-                                ) {
-                                }
-                            }
-
-                        }.start()
-                    },
-                    modifier =
-                        Modifier.fillMaxWidth(),
-                    shape =
-                        RoundedCornerShape(14.dp),
-                    enabled =
-                        !testing,
-                    colors =
-                        ButtonDefaults.buttonColors()
-                ) {
-
-                    Text(
-                        text =
-                            if (testing)
-                                "TESTANDO..."
-                            else
-                                "TESTAR SERVIDOR"
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
+                        Modifier.height(12.dp)
                 )
 
                 Row(
                     modifier =
-                        Modifier.fillMaxWidth()
+                        Modifier.fillMaxWidth(),
+
+                    horizontalArrangement =
+                        Arrangement.Center
                 ) {
 
-                    OutlinedButton(
+                    TextButton(
                         onClick = {
-
-                            val prefs =
-                                context.getSharedPreferences(
-                                    "tls_tunnel",
-                                    android.content.Context.MODE_PRIVATE
-                                )
-
-                            prefs.edit()
-                                .putString(
-                                    "host",
-                                    host
-                                )
-                                .putString(
-                                    "port",
-                                    port
-                                )
-                                .apply()
-
-                            status =
-                                "Configuração salva ✓"
-                        },
-                        modifier =
-                            Modifier.weight(1f),
-                        shape =
-                            RoundedCornerShape(14.dp)
+                            host = "tlstunnemvp.fly.dev"
+                            port = "443"
+                        }
                     ) {
 
-                        Text("SALVAR")
+                        Text("Restaurar padrão")
                     }
 
                     Spacer(
@@ -507,93 +373,23 @@ fun TLSTunnelApp(
 
                     OutlinedButton(
                         onClick = {
-
-                            host =
-                                "tlstunnemvp.fly.dev"
-
-                            port =
-                                "443"
-
-                            status =
-                                "Configuração restaurada"
-                        },
-                        modifier =
-                            Modifier.weight(1f),
-                        shape =
-                            RoundedCornerShape(14.dp)
+                            connected = false
+                        }
                     ) {
 
-                        Text("PADRÃO")
+                        Text("Limpar")
                     }
                 }
 
                 Spacer(
                     modifier =
                         Modifier.height(20.dp)
-                )
-
-                Card(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-                    shape =
-                        RoundedCornerShape(18.dp),
-                    colors =
-                        CardDefaults.cardColors()
-                ) {
-
-                    Column(
-                        modifier =
-                            Modifier.padding(18.dp)
-                    ) {
-
-                        Text(
-                            text = "INFORMAÇÕES",
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(8.dp)
-                        )
-
-                        Text(
-                            text =
-                                "Protocolo: TLSTUNNEL-MVP/2"
-                        )
-
-                        Text(
-                            text =
-                                "Transporte: TLS"
-                        )
-
-                        Text(
-                            text =
-                                "Porta externa: 443"
-                        )
-
-                        Text(
-                            text =
-                                "Backend: Fly.io"
-                        )
-                    }
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(25.dp)
                 )
 
                 Text(
-                    text =
-                        "TLS Tunnel MVP • v0.1.0",
+                    text = "TLS Tunnel MVP • v0.1",
                     style =
                         MaterialTheme.typography.bodySmall
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
                 )
             }
         }
