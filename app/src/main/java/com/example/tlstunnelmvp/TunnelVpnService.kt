@@ -7,8 +7,9 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
-import java.io.BufferedInputStream
-import java.io.BufferedOutputStream
+import java.net.InetSocketAddress
+import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
@@ -21,29 +22,16 @@ class TunnelVpnService : VpnService() {
         const val EXTRA_HOST = "server_host"
         const val EXTRA_PORT = "server_port"
 
-        const val ACTION_STATUS =
-            "com.example.tlstunnelmvp.TUNNEL_STATUS"
-
-        const val EXTRA_CONNECTED =
-            "connected"
-
-        private const val DEFAULT_HOST =
-            "tlstunnemvp.fly.dev"
-
+        private const val DEFAULT_HOST = "tlstunnemvp.fly.dev"
         private const val DEFAULT_PORT = 443
 
-        private const val PROTOCOL =
-            "TLSTUNNEL-MVP/2"
+        private const val PROTOCOL = "TLSTUNNEL-MVP/2"
     }
 
-    private var vpnInterface:
-        android.os.ParcelFileDescriptor? = null
+    private var vpnInterface: android.os.ParcelFileDescriptor? = null
+    private var tlsSocket: SSLSocket? = null
 
-    private var tlsSocket:
-        SSLSocket? = null
-
-    @Volatile
-    private var running = false
+    private val running = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -62,161 +50,173 @@ class TunnelVpnService : VpnService() {
         startId: Int
     ): Int {
 
-        if (running) {
-            return START_STICKY
+        if (running.compareAndSet(false, true)) {
+
+            val host =
+                intent?.getStringExtra(EXTRA_HOST)
+                    ?: DEFAULT_HOST
+
+            val port =
+                intent?.getIntExtra(
+                    EXTRA_PORT,
+                    DEFAULT_PORT
+                ) ?: DEFAULT_PORT
+
+            Thread {
+                connectionLoop(host, port)
+            }.start()
         }
-
-        val host =
-            intent?.getStringExtra(EXTRA_HOST)
-                ?: DEFAULT_HOST
-
-        val port =
-            intent?.getIntExtra(
-                EXTRA_PORT,
-                DEFAULT_PORT
-            ) ?: DEFAULT_PORT
-
-        running = true
-
-        sendStatus(false)
-
-        Thread {
-            runTunnel(host, port)
-        }.start()
 
         return START_STICKY
     }
 
-    private fun runTunnel(
+    private fun connectionLoop(
         host: String,
         port: Int
     ) {
 
-        try {
+        while (running.get()) {
 
-            vpnInterface = Builder()
-                .setSession("TLS Tunnel MVP")
-                .addAddress(
-                    "10.8.0.2",
-                    32
-                )
-                .establish()
+            try {
 
-            if (vpnInterface == null) {
-                sendStatus(false)
-                stopSelf()
-                return
+                establishVpn()
+
+                connectTls(host, port)
+
+                while (
+                    running.get() &&
+                    tlsSocket != null &&
+                    !tlsSocket!!.isClosed
+                ) {
+
+                    val socket = tlsSocket!!
+
+                    if (socket.inputStream.read() == -1) {
+                        throw Exception("Servidor encerrou a conexão")
+                    }
+                }
+
+            } catch (e: Exception) {
+
+                e.printStackTrace()
+
+            } finally {
+
+                closeConnection()
             }
 
-            val socketFactory =
-                SSLSocketFactory.getDefault()
-                    as SSLSocketFactory
-
-            val socket =
-                socketFactory.createSocket(
-                    host,
-                    port
-                ) as SSLSocket
-
-            tlsSocket = socket
-
-            if (!protect(socket)) {
-                socket.close()
-                sendStatus(false)
-                stopSelf()
-                return
-            }
-
-            socket.startHandshake()
-
-            val output =
-                BufferedOutputStream(
-                    socket.outputStream
-                )
-
-            val input =
-                BufferedInputStream(
-                    socket.inputStream
-                )
-
-            output.write(
-                PROTOCOL.toByteArray()
-            )
-
-            output.flush()
-
-            // Só consideramos conectado depois
-            // que o TLS foi estabelecido e o
-            // protocolo inicial foi enviado.
-            sendStatus(true)
-
-            val buffer =
-                ByteArray(1024)
-
-            while (
-                running &&
-                !socket.isClosed
-            ) {
-
-                val count =
-                    input.read(buffer)
-
-                if (count < 0) {
+            if (running.get()) {
+                try {
+                    Thread.sleep(3000)
+                } catch (_: InterruptedException) {
                     break
                 }
             }
-
-        } catch (error: Exception) {
-
-            error.printStackTrace()
-
-            sendStatus(false)
-
-        } finally {
-
-            try {
-                tlsSocket?.close()
-            } catch (_: Exception) {
-            }
-
-            tlsSocket = null
-
-            try {
-                vpnInterface?.close()
-            } catch (_: Exception) {
-            }
-
-            vpnInterface = null
-
-            running = false
-
-            sendStatus(false)
         }
+
+        closeConnection()
     }
 
-    private fun sendStatus(
-        connected: Boolean
+    private fun establishVpn() {
+
+        if (vpnInterface != null) {
+            return
+        }
+
+        vpnInterface = Builder()
+            .setSession("TLS Tunnel MVP")
+            .addAddress("10.8.0.2", 32)
+            .establish()
+    }
+
+    private fun connectTls(
+        host: String,
+        port: Int
     ) {
 
-        val intent =
-            Intent(ACTION_STATUS)
+        closeSocketOnly()
 
-        intent.setPackage(packageName)
+        /*
+         * IMPORTANTE:
+         * Primeiro criamos o socket normal.
+         * Depois protegemos contra a VPN.
+         * Só então conectamos.
+         */
 
-        intent.putExtra(
-            EXTRA_CONNECTED,
-            connected
+        val rawSocket = Socket()
+
+        if (!protect(rawSocket)) {
+            rawSocket.close()
+            throw Exception("Não foi possível proteger o socket")
+        }
+
+        rawSocket.connect(
+            InetSocketAddress(host, port),
+            15000
         )
 
-        sendBroadcast(intent)
+        rawSocket.keepAlive = true
+        rawSocket.tcpNoDelay = true
+
+        val factory =
+            SSLSocketFactory.getDefault()
+                as SSLSocketFactory
+
+        val socket =
+            factory.createSocket(
+                rawSocket,
+                host,
+                port,
+                true
+            ) as SSLSocket
+
+        tlsSocket = socket
+
+        socket.soTimeout = 60000
+
+        socket.startHandshake()
+
+        val output = socket.outputStream
+
+        output.write(
+            PROTOCOL.toByteArray(Charsets.UTF_8)
+        )
+
+        output.flush()
+
+        /*
+         * Se chegamos aqui, o TLS foi estabelecido
+         * e o protocolo foi enviado ao servidor.
+         */
+        println("TLS conectado em $host:$port")
+        println("Protocolo enviado: $PROTOCOL")
+    }
+
+    private fun closeSocketOnly() {
+
+        try {
+            tlsSocket?.close()
+        } catch (_: Exception) {
+        }
+
+        tlsSocket = null
+    }
+
+    private fun closeConnection() {
+
+        closeSocketOnly()
+
+        try {
+            vpnInterface?.close()
+        } catch (_: Exception) {
+        }
+
+        vpnInterface = null
     }
 
     private fun createNotificationChannel() {
 
-        if (
-            Build.VERSION.SDK_INT >=
-            Build.VERSION_CODES.O
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
 
             val channel =
                 NotificationChannel(
@@ -230,25 +230,18 @@ class TunnelVpnService : VpnService() {
                     NotificationManager::class.java
                 )
 
-            manager.createNotificationChannel(
-                channel
-            )
+            manager.createNotificationChannel(channel)
         }
     }
 
-    private fun createNotification():
-        Notification {
+    private fun createNotification(): Notification {
 
         return Notification.Builder(
             this,
             CHANNEL_ID
         )
-            .setContentTitle(
-                "TLS Tunnel MVP"
-            )
-            .setContentText(
-                "Túnel TLS em execução"
-            )
+            .setContentTitle("TLS Tunnel MVP")
+            .setContentText("Conexão TLS ativa")
             .setSmallIcon(
                 android.R.drawable.stat_sys_warning
             )
@@ -258,51 +251,25 @@ class TunnelVpnService : VpnService() {
 
     override fun onDestroy() {
 
-        running = false
+        running.set(false)
 
-        try {
-            tlsSocket?.close()
-        } catch (_: Exception) {
-        }
-
-        try {
-            vpnInterface?.close()
-        } catch (_: Exception) {
-        }
-
-        tlsSocket = null
-        vpnInterface = null
-
-        sendStatus(false)
+        closeConnection()
 
         super.onDestroy()
     }
 
     override fun onRevoke() {
 
-        running = false
+        running.set(false)
 
-        try {
-            tlsSocket?.close()
-        } catch (_: Exception) {
-        }
-
-        try {
-            vpnInterface?.close()
-        } catch (_: Exception) {
-        }
-
-        sendStatus(false)
+        closeConnection()
 
         stopSelf()
 
         super.onRevoke()
     }
 
-    override fun onBind(
-        intent: Intent?
-    ): IBinder? {
-
+    override fun onBind(intent: Intent?): IBinder? {
         return super.onBind(intent)
     }
 }
