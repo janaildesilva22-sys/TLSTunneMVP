@@ -126,11 +126,11 @@ fun TLSTunnelApp(
     }
 
     var host by remember {
-        mutableStateOf("127.0.0.1")
+        mutableStateOf("tlstunnemvp.fly.dev")
     }
 
     var port by remember {
-        mutableStateOf("4433")
+        mutableStateOf("443")
     }
 
     MaterialTheme {
