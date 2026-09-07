@@ -14,172 +14,199 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
 
-    private lateinit var statusText: TextView
-    private lateinit var progressBar: ProgressBar
+    private lateinit var status: TextView
+    private lateinit var progresso: ProgressBar
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        criarInterface()
+        criarTela()
     }
 
-    private fun criarInterface() {
+    private fun criarTela() {
 
-        val layout = LinearLayout(this)
-        layout.orientation = LinearLayout.VERTICAL
-        layout.setPadding(30, 40, 30, 30)
-        layout.gravity = Gravity.CENTER_HORIZONTAL
+        val tela = LinearLayout(this)
+
+        tela.orientation = LinearLayout.VERTICAL
+        tela.gravity = Gravity.CENTER_HORIZONTAL
+        tela.setPadding(30, 40, 30, 30)
+        tela.setBackgroundColor(Color.rgb(20, 20, 25))
 
         val titulo = TextView(this)
+
         titulo.text = "TLS Tunnel MVP"
         titulo.textSize = 28f
         titulo.setTextColor(Color.WHITE)
         titulo.gravity = Gravity.CENTER
-        titulo.setPadding(0, 0, 0, 30)
+        titulo.setPadding(0, 0, 0, 20)
 
-        val subtitulo = TextView(this)
-        subtitulo.text = "Conexão com Internet"
-        subtitulo.textSize = 17f
-        subtitulo.setTextColor(Color.LTGRAY)
-        subtitulo.gravity = Gravity.CENTER
+        tela.addView(titulo)
 
-        statusText = TextView(this)
-        statusText.text = "Status: desconectado"
-        statusText.textSize = 18f
-        statusText.gravity = Gravity.CENTER
-        statusText.setPadding(0, 40, 0, 20)
+        val descricao = TextView(this)
 
-        progressBar = ProgressBar(this)
-        progressBar.visibility = View.GONE
+        descricao.text = "Aplicativo de conexão"
+        descricao.textSize = 17f
+        descricao.setTextColor(Color.LTGRAY)
+        descricao.gravity = Gravity.CENTER
+
+        tela.addView(descricao)
+
+        status = TextView(this)
+
+        status.text = "Status: desconectado"
+        status.textSize = 18f
+        status.setTextColor(Color.WHITE)
+        status.gravity = Gravity.CENTER
+        status.setPadding(0, 35, 0, 20)
+
+        tela.addView(status)
+
+        progresso = ProgressBar(this)
+
+        progresso.visibility = View.GONE
+
+        tela.addView(progresso)
 
         val testar = Button(this)
+
         testar.text = "TESTAR INTERNET"
+
         testar.setOnClickListener {
             testarInternet()
         }
 
+        tela.addView(
+            testar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
         val conectar = Button(this)
+
         conectar.text = "CONECTAR"
+
         conectar.setOnClickListener {
             conectar()
         }
 
+        tela.addView(
+            conectar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
         val desconectar = Button(this)
+
         desconectar.text = "DESCONECTAR"
+
         desconectar.setOnClickListener {
             desconectar()
         }
 
+        tela.addView(
+            desconectar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
         val informacoes = Button(this)
+
         informacoes.text = "INFORMAÇÕES"
+
         informacoes.setOnClickListener {
-            mostrarInformacoes()
+            informacoes()
         }
 
+        tela.addView(
+            informacoes,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
         val sair = Button(this)
+
         sair.text = "SAIR"
+
         sair.setOnClickListener {
             finish()
         }
 
-        layout.addView(titulo)
-        layout.addView(subtitulo)
-        layout.addView(statusText)
-        layout.addView(progressBar)
-
-        layout.addView(
-            testar,
-            LinearLayout.LayoutParams(
-                -1,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        layout.addView(
-            conectar,
-            LinearLayout.LayoutParams(
-                -1,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        layout.addView(
-            desconectar,
-            LinearLayout.LayoutParams(
-                -1,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        layout.addView(
-            informacoes,
-            LinearLayout.LayoutParams(
-                -1,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        )
-
-        layout.addView(
+        tela.addView(
             sair,
             LinearLayout.LayoutParams(
-                -1,
+                LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         )
 
-        layout.setBackgroundColor(Color.rgb(20, 20, 25))
-
-        setContentView(layout)
+        setContentView(tela)
     }
 
     private fun testarInternet() {
 
-        statusText.text = "Status: testando Internet..."
-        progressBar.visibility = View.VISIBLE
+        status.text = "Status: verificando Internet..."
+        progresso.visibility = View.VISIBLE
 
         thread {
 
-            var conectado = false
+            var sucesso = false
 
             try {
+
                 val url = URL("https://www.google.com")
 
-                val connection =
+                val conexao =
                     url.openConnection() as HttpURLConnection
 
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
+                conexao.requestMethod = "GET"
+                conexao.connectTimeout = 10000
+                conexao.readTimeout = 10000
 
-                connection.connect()
+                conexao.connect()
 
-                conectado = connection.responseCode in 200..399
+                sucesso = conexao.responseCode in 200..399
 
-                connection.disconnect()
+                conexao.disconnect()
 
-            } catch (e: Exception) {
-                conectado = false
+            } catch (erro: Exception) {
+
+                sucesso = false
             }
 
-            mainHandler.post {
+            handler.post {
 
-                progressBar.visibility = View.GONE
+                progresso.visibility = View.GONE
 
-                if (conectado) {
-                    statusText.text = "Status: Internet funcionando ✓"
+                if (sucesso) {
+
+                    status.text =
+                        "Status: Internet funcionando ✓"
+
                     Toast.makeText(
                         this,
-                        "Conexão com a Internet OK",
-                        Toast.LENGTH_LONG
+                        "Internet funcionando",
+                        Toast.LENGTH_SHORT
                     ).show()
+
                 } else {
-                    statusText.text = "Status: sem conexão com a Internet"
+
+                    status.text =
+                        "Status: Internet indisponível"
+
                     Toast.makeText(
                         this,
-                        "Não foi possível acessar a Internet",
-                        Toast.LENGTH_LONG
+                        "Falha ao acessar a Internet",
+                        Toast.LENGTH_SHORT
                     ).show()
                 }
             }
@@ -188,42 +215,43 @@ class MainActivity : Activity() {
 
     private fun conectar() {
 
-        statusText.text = "Status: conectado ✓"
+        status.text = "Status: conectado ✓"
 
         Toast.makeText(
             this,
-            "Aplicativo conectado",
+            "Conectado",
             Toast.LENGTH_SHORT
         ).show()
     }
 
     private fun desconectar() {
 
-        statusText.text = "Status: desconectado"
+        status.text = "Status: desconectado"
 
         Toast.makeText(
             this,
-            "Conexão encerrada",
+            "Desconectado",
             Toast.LENGTH_SHORT
         ).show()
     }
 
-    private fun mostrarInformacoes() {
+    private fun informacoes() {
 
         AlertDialog.Builder(this)
             .setTitle("TLS Tunnel MVP")
             .setMessage(
-                "Aplicativo de teste de conexão.\n\n" +
-                "Internet: habilitada\n" +
-                "HTTPS: habilitado\n" +
-                "Teste de conexão: disponível"
+                "Acesso à Internet: habilitado\n\n" +
+                "Teste HTTPS: disponível\n\n" +
+                "Versão: MVP"
             )
             .setPositiveButton("OK", null)
             .show()
     }
 
     override fun onDestroy() {
+
+        handler.removeCallbacksAndMessages(null)
+
         super.onDestroy()
-        mainHandler.removeCallbacksAndMessages(null)
     }
 }
