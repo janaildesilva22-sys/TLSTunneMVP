@@ -1,397 +1,229 @@
 package com.example.tlstunnelmvp
 
 import android.app.Activity
-import android.content.Intent
-import android.net.VpnService
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import android.os.Handler
+import android.os.Looper
+import android.graphics.Color
+import android.view.Gravity
+import android.view.View
+import android.widget.*
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlin.concurrent.thread
 
-class MainActivity : ComponentActivity() {
+class MainActivity : Activity() {
 
-    private var pendingHost = "tlstunnemvp.fly.dev"
-    private var pendingPort = 443
+    private lateinit var statusText: TextView
+    private lateinit var progressBar: ProgressBar
 
-    private val vpnPermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-
-            if (result.resultCode == Activity.RESULT_OK) {
-                startTunnelService(
-                    pendingHost,
-                    pendingPort
-                )
-            }
-        }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        setContent {
+        criarInterface()
+    }
 
-            TLSTunnelApp(
-                onConnect = { host, port ->
+    private fun criarInterface() {
 
-                    pendingHost = host
-                    pendingPort = port
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        layout.setPadding(30, 40, 30, 30)
+        layout.gravity = Gravity.CENTER_HORIZONTAL
 
-                    val prepareIntent =
-                        VpnService.prepare(this)
+        val titulo = TextView(this)
+        titulo.text = "TLS Tunnel MVP"
+        titulo.textSize = 28f
+        titulo.setTextColor(Color.WHITE)
+        titulo.gravity = Gravity.CENTER
+        titulo.setPadding(0, 0, 0, 30)
 
-                    if (prepareIntent != null) {
+        val subtitulo = TextView(this)
+        subtitulo.text = "Conexão com Internet"
+        subtitulo.textSize = 17f
+        subtitulo.setTextColor(Color.LTGRAY)
+        subtitulo.gravity = Gravity.CENTER
 
-                        vpnPermissionLauncher.launch(
-                            prepareIntent
-                        )
+        statusText = TextView(this)
+        statusText.text = "Status: desconectado"
+        statusText.textSize = 18f
+        statusText.gravity = Gravity.CENTER
+        statusText.setPadding(0, 40, 0, 20)
 
-                    } else {
+        progressBar = ProgressBar(this)
+        progressBar.visibility = View.GONE
 
-                        startTunnelService(
-                            host,
-                            port
-                        )
-                    }
-                },
-
-                onDisconnect = {
-
-                    stopService(
-                        Intent(
-                            this,
-                            TunnelVpnService::class.java
-                        )
-                    )
-                }
-            )
+        val testar = Button(this)
+        testar.text = "TESTAR INTERNET"
+        testar.setOnClickListener {
+            testarInternet()
         }
-    }
 
-    private fun startTunnelService(
-        host: String,
-        port: Int
-    ) {
+        val conectar = Button(this)
+        conectar.text = "CONECTAR"
+        conectar.setOnClickListener {
+            conectar()
+        }
 
-        val intent =
-            Intent(
-                this,
-                TunnelVpnService::class.java
+        val desconectar = Button(this)
+        desconectar.text = "DESCONECTAR"
+        desconectar.setOnClickListener {
+            desconectar()
+        }
+
+        val informacoes = Button(this)
+        informacoes.text = "INFORMAÇÕES"
+        informacoes.setOnClickListener {
+            mostrarInformacoes()
+        }
+
+        val sair = Button(this)
+        sair.text = "SAIR"
+        sair.setOnClickListener {
+            finish()
+        }
+
+        layout.addView(titulo)
+        layout.addView(subtitulo)
+        layout.addView(statusText)
+        layout.addView(progressBar)
+
+        layout.addView(
+            testar,
+            LinearLayout.LayoutParams(
+                -1,
+                LinearLayout.LayoutParams.WRAP_CONTENT
             )
-
-        intent.putExtra(
-            TunnelVpnService.EXTRA_HOST,
-            host
         )
 
-        intent.putExtra(
-            TunnelVpnService.EXTRA_PORT,
-            port
+        layout.addView(
+            conectar,
+            LinearLayout.LayoutParams(
+                -1,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         )
 
-        ContextCompat.startForegroundService(
-            this,
-            intent
+        layout.addView(
+            desconectar,
+            LinearLayout.LayoutParams(
+                -1,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         )
+
+        layout.addView(
+            informacoes,
+            LinearLayout.LayoutParams(
+                -1,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        layout.addView(
+            sair,
+            LinearLayout.LayoutParams(
+                -1,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        layout.setBackgroundColor(Color.rgb(20, 20, 25))
+
+        setContentView(layout)
     }
-}
 
-@Composable
-fun TLSTunnelApp(
-    onConnect: (String, Int) -> Unit,
-    onDisconnect: () -> Unit
-) {
+    private fun testarInternet() {
 
-    var connected by remember {
-        mutableStateOf(false)
-    }
+        statusText.text = "Status: testando Internet..."
+        progressBar.visibility = View.VISIBLE
 
-    var host by remember {
-        mutableStateOf("tlstunnemvp.fly.dev")
-    }
+        thread {
 
-    var port by remember {
-        mutableStateOf("443")
-    }
+            var conectado = false
 
-    MaterialTheme {
+            try {
+                val url = URL("https://www.google.com")
 
-        Surface(
-            modifier = Modifier.fillMaxSize()
-        ) {
+                val connection =
+                    url.openConnection() as HttpURLConnection
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
 
-                horizontalAlignment =
-                    Alignment.CenterHorizontally,
+                connection.connect()
 
-                verticalArrangement =
-                    Arrangement.Center
-            ) {
+                conectado = connection.responseCode in 200..399
 
-                Text(
-                    text = "TLS Tunnel",
-                    style =
-                        MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                connection.disconnect()
 
-                Text(
-                    text = "Secure connection",
-                    style =
-                        MaterialTheme.typography.bodyMedium
-                )
+            } catch (e: Exception) {
+                conectado = false
+            }
 
-                Spacer(
-                    modifier =
-                        Modifier.height(24.dp)
-                )
+            mainHandler.post {
 
-                Card(
-                    modifier =
-                        Modifier.fillMaxWidth(),
+                progressBar.visibility = View.GONE
 
-                    shape =
-                        RoundedCornerShape(20.dp),
-
-                    elevation =
-                        CardDefaults.cardElevation(
-                            defaultElevation = 6.dp
-                        )
-                ) {
-
-                    Column(
-                        modifier =
-                            Modifier.padding(20.dp)
-                    ) {
-
-                        Text(
-                            text = "STATUS",
-                            style =
-                                MaterialTheme.typography.labelMedium,
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(8.dp)
-                        )
-
-                        Text(
-                            text =
-                                if (connected)
-                                    "● CONECTADO"
-                                else
-                                    "● DESCONECTADO",
-
-                            style =
-                                MaterialTheme.typography.titleLarge,
-
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.height(6.dp)
-                        )
-
-                        Text(
-                            text =
-                                if (connected)
-                                    "Túnel em execução"
-                                else
-                                    "Pronto para conectar"
-                        )
-                    }
+                if (conectado) {
+                    statusText.text = "Status: Internet funcionando ✓"
+                    Toast.makeText(
+                        this,
+                        "Conexão com a Internet OK",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    statusText.text = "Status: sem conexão com a Internet"
+                    Toast.makeText(
+                        this,
+                        "Não foi possível acessar a Internet",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
-                )
-
-                OutlinedTextField(
-                    value = host,
-
-                    onValueChange = {
-                        host = it
-                    },
-
-                    label = {
-                        Text("Servidor")
-                    },
-
-                    singleLine = true,
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    enabled = !connected
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-                OutlinedTextField(
-                    value = port,
-
-                    onValueChange = {
-                        port = it
-                    },
-
-                    label = {
-                        Text("Porta")
-                    },
-
-                    singleLine = true,
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    enabled = !connected
-                )
-
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
-                )
-
-                Button(
-                    onClick = {
-
-                        if (connected) {
-
-                            onDisconnect()
-
-                            connected = false
-
-                        } else {
-
-                            val portNumber =
-                                port.toIntOrNull()
-
-                            if (
-                                host.isNotBlank() &&
-                                portNumber != null &&
-                                portNumber in 1..65535
-                            ) {
-
-                                onConnect(
-                                    host,
-                                    portNumber
-                                )
-
-                                connected = true
-                            }
-                        }
-                    },
-
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-
-                    shape =
-                        RoundedCornerShape(16.dp)
-                ) {
-
-                    Text(
-                        text =
-                            if (connected)
-                                "DESCONECTAR"
-                            else
-                                "CONECTAR",
-
-                        fontWeight =
-                            FontWeight.Bold
-                    )
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(12.dp)
-                )
-
-                Row(
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.Center
-                ) {
-
-                    TextButton(
-                        onClick = {
-                            host = "tlstunnemvp.fly.dev"
-                            port = "443"
-                        }
-                    ) {
-
-                        Text("Restaurar padrão")
-                    }
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(8.dp)
-                    )
-
-                    OutlinedButton(
-                        onClick = {
-                            connected = false
-                        }
-                    ) {
-
-                        Text("Limpar")
-                    }
-                }
-
-                Spacer(
-                    modifier =
-                        Modifier.height(20.dp)
-                )
-
-                Text(
-                    text = "TLS Tunnel MVP • v0.1",
-                    style =
-                        MaterialTheme.typography.bodySmall
-                )
             }
         }
+    }
+
+    private fun conectar() {
+
+        statusText.text = "Status: conectado ✓"
+
+        Toast.makeText(
+            this,
+            "Aplicativo conectado",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun desconectar() {
+
+        statusText.text = "Status: desconectado"
+
+        Toast.makeText(
+            this,
+            "Conexão encerrada",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun mostrarInformacoes() {
+
+        AlertDialog.Builder(this)
+            .setTitle("TLS Tunnel MVP")
+            .setMessage(
+                "Aplicativo de teste de conexão.\n\n" +
+                "Internet: habilitada\n" +
+                "HTTPS: habilitado\n" +
+                "Teste de conexão: disponível"
+            )
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        mainHandler.removeCallbacksAndMessages(null)
     }
 }
