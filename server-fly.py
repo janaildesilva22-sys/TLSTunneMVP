@@ -7,9 +7,6 @@ import threading
 HOST = "0.0.0.0"
 PORT = 4433
 
-PROTOCOL = b"TLSTUNNEL-MVP/2"
-MAX_PACKET = 32767
-
 
 def recvn(sock, size):
     data = b""
@@ -29,49 +26,129 @@ def handle_client(conn, addr):
     print(f"Cliente conectado: {addr}")
 
     try:
-        hello = conn.recv(len(PROTOCOL))
+        # SOCKS5 handshake
+        header = recvn(conn, 2)
 
-        if hello != PROTOCOL:
-            print(f"Protocolo inválido: {addr}")
+        if not header or header[0] != 5:
             return
 
-        print(f"Protocolo aceito: {addr}")
+        methods_count = header[1]
+        methods = recvn(conn, methods_count)
 
-        while True:
+        if methods is None:
+            return
 
-            header = recvn(conn, 4)
+        # Sem autenticação
+        conn.sendall(b"\x05\x00")
 
-            if header is None:
-                break
+        # SOCKS5 request
+        request = recvn(conn, 4)
 
-            size = struct.unpack("!I", header)[0]
+        if not request or request[0] != 5:
+            return
 
-            if size <= 0 or size > MAX_PACKET:
-                print(f"Pacote inválido: {size}")
-                break
+        command = request[1]
+        address_type = request[3]
 
-            packet = recvn(conn, size)
+        if command != 1:
+            conn.sendall(
+                b"\x05\x07\x00\x01"
+                b"\x00\x00\x00\x00\x00\x00"
+            )
+            return
 
-            if packet is None:
-                break
+        # IPv4
+        if address_type == 1:
+            raw_address = recvn(conn, 4)
+            destination_host = socket.inet_ntoa(raw_address)
 
-            # MVP: ecoa o pacote para testar a comunicação.
-            response = (
-                struct.pack("!I", len(packet))
-                + packet
+        # Domain name
+        elif address_type == 3:
+            length = recvn(conn, 1)[0]
+            raw_domain = recvn(conn, length)
+            destination_host = raw_domain.decode()
+
+        # IPv6
+        elif address_type == 4:
+            raw_address = recvn(conn, 16)
+            destination_host = socket.inet_ntop(
+                socket.AF_INET6,
+                raw_address
             )
 
-            conn.sendall(response)
+        else:
+            return
+
+        raw_port = recvn(conn, 2)
+
+        if raw_port is None:
+            return
+
+        destination_port = struct.unpack(
+            "!H",
+            raw_port
+        )[0]
+
+        print(
+            f"Conectando em "
+            f"{destination_host}:{destination_port}"
+        )
+
+        remote = socket.create_connection(
+            (destination_host, destination_port),
+            timeout=15
+        )
+
+        # SOCKS5 success
+        conn.sendall(
+            b"\x05\x00\x00\x01"
+            b"\x00\x00\x00\x00\x00\x00"
+        )
+
+        relay(conn, remote)
 
     except Exception as error:
         print(f"Erro com {addr}: {error}")
 
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
+
         print(f"Cliente desconectado: {addr}")
 
 
+def relay(client, remote):
+    sockets = [client, remote]
+
+    while True:
+        readable, _, _ = select.select(
+            sockets,
+            [],
+            [],
+            60
+        )
+
+        if not readable:
+            break
+
+        for sock in readable:
+            data = sock.recv(32768)
+
+            if not data:
+                return
+
+            if sock is client:
+                remote.sendall(data)
+            else:
+                client.sendall(data)
+
+
 def main():
+    global select
+
+    import select
 
     server = socket.socket(
         socket.AF_INET,
@@ -84,16 +161,18 @@ def main():
         1
     )
 
-    server.bind((HOST, PORT))
-    server.listen(50)
+    server.bind(
+        (HOST, PORT)
+    )
+
+    server.listen(100)
 
     print(
-        f"TLS Tunnel backend ouvindo em "
-        f"{HOST}:{PORT}"
+        f"SOCKS5 server ouvindo "
+        f"em {HOST}:{PORT}"
     )
 
     while True:
-
         conn, addr = server.accept()
 
         thread = threading.Thread(
