@@ -21,12 +21,26 @@ class TunnelVpnService : VpnService() {
         const val EXTRA_HOST = "server_host"
         const val EXTRA_PORT = "server_port"
 
-        private const val DEFAULT_HOST = "127.0.0.1"
-        private const val DEFAULT_PORT = 4433
+        const val ACTION_STATUS =
+            "com.example.tlstunnelmvp.TUNNEL_STATUS"
+
+        const val EXTRA_CONNECTED =
+            "connected"
+
+        private const val DEFAULT_HOST =
+            "tlstunnemvp.fly.dev"
+
+        private const val DEFAULT_PORT = 443
+
+        private const val PROTOCOL =
+            "TLSTUNNEL-MVP/2"
     }
 
-    private var vpnInterface: android.os.ParcelFileDescriptor? = null
-    private var tlsSocket: SSLSocket? = null
+    private var vpnInterface:
+        android.os.ParcelFileDescriptor? = null
+
+    private var tlsSocket:
+        SSLSocket? = null
 
     @Volatile
     private var running = false
@@ -48,24 +62,27 @@ class TunnelVpnService : VpnService() {
         startId: Int
     ): Int {
 
-        if (!running) {
-
-            running = true
-
-            val host =
-                intent?.getStringExtra(EXTRA_HOST)
-                    ?: DEFAULT_HOST
-
-            val port =
-                intent?.getIntExtra(
-                    EXTRA_PORT,
-                    DEFAULT_PORT
-                ) ?: DEFAULT_PORT
-
-            Thread {
-                runTunnel(host, port)
-            }.start()
+        if (running) {
+            return START_STICKY
         }
+
+        val host =
+            intent?.getStringExtra(EXTRA_HOST)
+                ?: DEFAULT_HOST
+
+        val port =
+            intent?.getIntExtra(
+                EXTRA_PORT,
+                DEFAULT_PORT
+            ) ?: DEFAULT_PORT
+
+        running = true
+
+        sendStatus(false)
+
+        Thread {
+            runTunnel(host, port)
+        }.start()
 
         return START_STICKY
     }
@@ -79,10 +96,14 @@ class TunnelVpnService : VpnService() {
 
             vpnInterface = Builder()
                 .setSession("TLS Tunnel MVP")
-                .addAddress("10.8.0.2", 32)
+                .addAddress(
+                    "10.8.0.2",
+                    32
+                )
                 .establish()
 
             if (vpnInterface == null) {
+                sendStatus(false)
                 stopSelf()
                 return
             }
@@ -101,6 +122,7 @@ class TunnelVpnService : VpnService() {
 
             if (!protect(socket)) {
                 socket.close()
+                sendStatus(false)
                 stopSelf()
                 return
             }
@@ -118,12 +140,18 @@ class TunnelVpnService : VpnService() {
                 )
 
             output.write(
-                "TLSTUNNEL-MVP/2".toByteArray()
+                PROTOCOL.toByteArray()
             )
 
             output.flush()
 
-            val buffer = ByteArray(1024)
+            // Só consideramos conectado depois
+            // que o TLS foi estabelecido e o
+            // protocolo inicial foi enviado.
+            sendStatus(true)
+
+            val buffer =
+                ByteArray(1024)
 
             while (
                 running &&
@@ -138,9 +166,11 @@ class TunnelVpnService : VpnService() {
                 }
             }
 
-        } catch (e: Exception) {
+        } catch (error: Exception) {
 
-            e.printStackTrace()
+            error.printStackTrace()
+
+            sendStatus(false)
 
         } finally {
 
@@ -157,8 +187,28 @@ class TunnelVpnService : VpnService() {
             }
 
             vpnInterface = null
+
             running = false
+
+            sendStatus(false)
         }
+    }
+
+    private fun sendStatus(
+        connected: Boolean
+    ) {
+
+        val intent =
+            Intent(ACTION_STATUS)
+
+        intent.setPackage(packageName)
+
+        intent.putExtra(
+            EXTRA_CONNECTED,
+            connected
+        )
+
+        sendBroadcast(intent)
     }
 
     private fun createNotificationChannel() {
@@ -186,7 +236,8 @@ class TunnelVpnService : VpnService() {
         }
     }
 
-    private fun createNotification(): Notification {
+    private fun createNotification():
+        Notification {
 
         return Notification.Builder(
             this,
@@ -222,6 +273,8 @@ class TunnelVpnService : VpnService() {
         tlsSocket = null
         vpnInterface = null
 
+        sendStatus(false)
+
         super.onDestroy()
     }
 
@@ -239,6 +292,8 @@ class TunnelVpnService : VpnService() {
         } catch (_: Exception) {
         }
 
+        sendStatus(false)
+
         stopSelf()
 
         super.onRevoke()
@@ -247,6 +302,7 @@ class TunnelVpnService : VpnService() {
     override fun onBind(
         intent: Intent?
     ): IBinder? {
+
         return super.onBind(intent)
     }
 }
