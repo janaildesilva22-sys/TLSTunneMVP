@@ -1,4 +1,4 @@
-app = "tlstunnelmvp-janailde"
+app = "tlstunnemvp"
 primary_region = "gru"
 
 [build]
